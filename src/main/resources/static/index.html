@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Finder</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 50px auto; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; }
+        input { width: 100%; padding: 10px; }
+        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; }
+        .result { margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Music Finder</h1>
+    <h3>Search for your music here</h3>
+    <div class="form-group">
+        <label for="artist">Artist</label>
+        <input type="text" id="artist" placeholder="Enter artist name">
+    </div>
+    <div class="form-group">
+        <label for="song">Song</label>
+        <input type="text" id="song" placeholder="Enter song title">
+    </div>
+    <button onclick="searchSong()">Search</button>
+
+    <div class="result">
+        <h2>Results:</h2>
+        <div id="youtube"></div>
+        <div id="lyrics"></div>
+    </div>
+</div>
+
+<script>
+    function searchSong() {
+        const artist = document.getElementById('artist').value;
+        const song = document.getElementById('song').value;
+
+        fetch(`/song/${artist}/${song}`)
+            .then(response => response.json())
+            .then(data => {
+                // Show YouTube search link
+                document.getElementById('youtube').innerHTML = `
+                    <h3>Watch on YouTube:</h3>
+                    <a href="${data.youtubeSearch}" target="_blank">Click here to watch on YouTube</a>
+                `;
+
+                // Display lyrics as HTML (ensure <br> tags are rendered as line breaks)
+                document.getElementById('lyrics').innerHTML = `
+                    <h3>Lyrics:</h3>
+                    <p>${data.lyrics}</p>
+                `;
+            })
+            .catch(error => console.error('Error:', error));
+    }
+</script>
+
+</body>
+</html>

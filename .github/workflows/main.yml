@@ -1,0 +1,112 @@
+name: AS01 - Test MusicFinder API
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+  create:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APP_PORT: 8080
+  INTERNAL_PORT: 8080
+  CONTAINER_NAME: app-under-test
+  HEALTH_URL: http://localhost:8080/song/arcade%20fire/wake%20up
+
+jobs:
+  branch-check:
+    name: Verify non-default branch exists
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for remote branches other than main/master
+        run: |
+          git fetch --all --prune
+      
+          # List remote heads, strip "refs/heads/", exclude main/master
+          FEATURE_BRANCHES="$(git ls-remote --heads origin \
+            | awk '{print $2}' \
+            | sed 's@refs/heads/@@' \
+            | grep -Ev '^(main|master)$' || true)"
+      
+          echo "Branches (excluding main/master):"
+          if [ -n "$FEATURE_BRANCHES" ]; then
+            echo "$FEATURE_BRANCHES" | sed 's/^/ - /'
+          else
+            echo " - <none>"
+          fi
+      
+          COUNT="$(printf '%s\n' "$FEATURE_BRANCHES" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+          if [ "${COUNT:-0}" -lt 1 ]; then
+            echo "::error::No branches other than main/master found on 'origin'. Create and push a feature branch."
+            exit 1
+          fi
+
+  checks:
+    name: Contribution + CI + Docker checks
+    runs-on: ubuntu-latest
+    # Run for push and PR events
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'create' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 4) Check another workflow called ci.yml exists
+      - name: Ensure .github/workflows/ci.yml exists
+        run: |
+          test -f .github/workflows/ci.yml || {
+            echo "::error file=.github/workflows/ci.yml::Missing workflow 'ci.yml'";
+            exit 1;
+          }
+
+      # 2) Number of commits should be > 1
+      - name: Count commits on push
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          COUNT=$(git rev-list --count ${{ github.event.before }}..${{ github.sha }})
+          echo "Commit count on this push: $COUNT"
+          [ "$COUNT" -gt 0 ] || { echo "::error::Need at least 1 commit on branch"; exit 1; }
+
+      # 5) Docker build
+      - name: Build Docker image
+        run: |
+          mvn clean package -DskipTests
+          docker build -t app:${{ github.sha }} .
+
+      # 6) Docker run + API probe of the exact endpoint
+      - name: Run container
+        run: |
+          docker run -d --rm --name "$CONTAINER_NAME" -p ${APP_PORT}:${INTERNAL_PORT} app:${{ github.sha }}
+          docker ps
+
+      - name: Probe API endpoint
+        run: |
+          echo "Probing: $HEALTH_URL"
+          for i in $(seq 1 30); do
+            if curl -fsS "$HEALTH_URL" > response.json 2>/dev/null; then
+              echo "Endpoint responded (showing first 500 bytes):"
+              head -c 500 response.json || true
+              exit 0
+            fi
+            echo "Attempt $i/30: not ready yet..."
+            sleep 3
+          done
+          echo "::error::API did not become ready at $HEALTH_URL"
+          echo "Recent container logs:"
+          docker logs "$CONTAINER_NAME" || true
+          exit 1
+
+      - name: Stop container
+        if: always()
+        run: |
+          docker stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
