@@ -24,14 +24,22 @@ public class MusicFinderController {
     private static final String LYRICS_BASE = "https://api.lyrics.ovh/v1";
     private static final Pattern SAFE_PART = Pattern.compile("^[\\p{L}0-9 .,'()\\-]{1,100}$");
 
-    private String sanitizePart(String value, String fieldName) {
-        if (value == null) throw new IllegalArgumentException(fieldName + " is required");
-        String s = Normalizer.normalize(value.trim(), Normalizer.Form.NFKC);
-        if (!SAFE_PART.matcher(s).matches()) {
+private String sanitizePart(String value, String fieldName) {
+    if (value == null) throw new IllegalArgumentException(fieldName + " is required");
+    String s = java.text.Normalizer.normalize(value.trim(), java.text.Normalizer.Form.NFKC);
+
+    if (s.isEmpty() || s.length() > 200) {
+        throw new IllegalArgumentException("Invalid " + fieldName);
+    }
+
+    for (int i = 0; i < s.length(); i++) {
+        if (Character.isISOControl(s.charAt(i))) {
             throw new IllegalArgumentException("Invalid " + fieldName);
         }
-        return s;
     }
+    return s;
+}
+
 
     @GetMapping("/status")
     public String getStatus() {
@@ -116,7 +124,7 @@ public class MusicFinderController {
 public String findMusic(@RequestParam String artist, @RequestParam String song) {
     String safeArtist = sanitizePart(artist, "artist");
     String safeSong = sanitizePart(song, "song");
-    
+
     logger.logMessage("Searching for: " + safeArtist + " - " + safeSong);
     return "Results for " + safeArtist + " - " + safeSong;
 }
